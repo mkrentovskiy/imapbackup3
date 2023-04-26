@@ -15,6 +15,7 @@ import os
 import re
 import socket
 import sys
+import binascii
 
 logger = logging.getLogger("imapbackup3")
 
@@ -362,7 +363,30 @@ class IMAPBackup:
             filename = "." + ".".join(imap_foldername.split(delim))
         else:
             raise ValueError("Mailbox format {} not understood".format(fmt))
-        return filename
+        return self.decode_utf7(filename)
+
+    def decode_utf7(self, value):
+        def _modified_unbase64(value):
+            return binascii.a2b_base64(value.replace(b',', b'/') + b'===').decode('utf-16be')
+        value = str.encode(value)
+        res = []
+        decode_arr = bytearray()
+        for char in value:
+            if char == ord('&') and not decode_arr:
+                decode_arr.append(ord('&'))
+            elif char == ord('-') and decode_arr:
+                if len(decode_arr) == 1:
+                    res.append('&')
+                else:
+                    res.append(_modified_unbase64(decode_arr[1:]))
+                decode_arr = bytearray()
+            elif decode_arr:
+                decode_arr.append(char)
+            else:
+                res.append(chr(char))
+        if decode_arr:
+            res.append(_modified_unbase64(decode_arr[1:]))
+        return ''.join(res)
 
     def create_folder_structure(self):
         """ Create the folder structure on disk """
